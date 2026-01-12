@@ -1,0 +1,97 @@
+# ============================================================================
+# Multi-stage Dockerfile - Optimized for Production
+# Target size: ~800MB-1GB (with Playwright)
+# ============================================================================
+
+# Stage 1: Builder - Build Python wheels
+FROM python:3.11-slim as builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and build wheels
+COPY requirements.txt .
+RUN pip wheel --no-cache-dir --wheel-dir /build/wheels -r requirements.txt
+
+# ============================================================================
+# Stage 2: Runtime - Final image
+# ============================================================================
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime system dependencies (Playwright + utilities)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Playwright dependencies
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libasound2 \
+    libatspi2.0-0 \
+    libwayland-client0 \
+    libdbus-1-3 \
+    fonts-liberation \
+    xdg-utils \
+    # Utilities
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy and install pre-built wheels from builder stage
+COPY --from=builder /build/wheels /wheels
+RUN pip install --no-cache-dir --no-deps /wheels/* && rm -rf /wheels
+
+# Install Playwright browsers and clean up
+RUN playwright install chromium && \
+    playwright install-deps chromium && \
+    # Remove unnecessary files to reduce size
+    rm -rf /root/.cache/ms-playwright/chromium-*/chrome-linux/locales/* && \
+    rm -rf /root/.cache/ms-playwright/chromium-*/chrome-linux/swiftshader && \
+    # Keep only en-US locale
+    find /root/.cache/ms-playwright -name "*.pak" ! -name "en-US.pak" ! -name "resources.pak" -delete 2>/dev/null || true
+
+# Copy application code
+# NOTE: This assumes Docker build context is the backend/ directory
+# Build command: docker build -t cpt-scraper-image -f Dockerfile.optimized .
+COPY . /app/
+
+# Set Python path
+ENV PYTHONPATH=/app:$PYTHONPATH \
+    PYTHONUNBUFFERED=1
+
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app && \
+    # Create directories for logs and data
+    mkdir -p /app/logs /app/data && \
+    chown -R appuser:appuser /app/logs /app/data
+
+# Switch to non-root user
+USER appuser
+
+# Expose FastAPI port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command - Run FastAPI server
+# For scraper execution, the command will be overridden by docker_service.py
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

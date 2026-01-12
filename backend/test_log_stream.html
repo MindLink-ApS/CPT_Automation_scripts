@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Stream Test - CPT Automation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 10px 20px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-connect {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-disconnect {
+            background-color: #f44336;
+            color: white;
+        }
+        .btn-clear {
+            background-color: #2196F3;
+            color: white;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .status.connecting {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        #logContainer {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            height: 500px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .log-line {
+            margin-bottom: 5px;
+            word-wrap: break-word;
+        }
+        .log-info {
+            color: #4EC9B0;
+        }
+        .log-error {
+            color: #F48771;
+        }
+        .log-warning {
+            color: #CE9178;
+        }
+        .log-success {
+            color: #B5CEA8;
+        }
+        .log-status {
+            color: #DCDCAA;
+            font-weight: bold;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔴 Real-time Log Stream Test</h1>
+    
+    <div class="container">
+        <div class="input-group">
+            <label for="jobId">Job ID:</label>
+            <input type="text" id="jobId" placeholder="Enter job ID (e.g., job-20251231123918-b1270de0)">
+        </div>
+        
+        <div id="status" class="status disconnected">
+            Status: Disconnected
+        </div>
+        
+        <div>
+            <button class="btn-connect" onclick="connectStream()">🔴 Connect to Stream</button>
+            <button class="btn-disconnect" onclick="disconnectStream()">⏹️ Disconnect</button>
+            <button class="btn-clear" onclick="clearLogs()">🗑️ Clear Logs</button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="lineCount">0</div>
+                <div class="stat-label">Log Lines</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="duration">0s</div>
+                <div class="stat-label">Duration</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="eventCount">0</div>
+                <div class="stat-label">Events</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h3>📜 Live Logs</h3>
+        <div id="logContainer"></div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let lineCount = 0;
+        let eventCount = 0;
+        let startTime = null;
+        let durationInterval = null;
+
+        function updateStatus(text, className) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = 'Status: ' + text;
+            statusEl.className = 'status ' + className;
+        }
+
+        function addLog(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const logLine = document.createElement('div');
+            logLine.className = 'log-line log-' + type;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            logLine.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logLine);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            lineCount++;
+            document.getElementById('lineCount').textContent = lineCount;
+        }
+
+        function updateDuration() {
+            if (startTime) {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('duration').textContent = elapsed + 's';
+            }
+        }
+
+        function connectStream() {
+            const jobId = document.getElementById('jobId').value.trim();
+            
+            if (!jobId) {
+                alert('Please enter a Job ID');
+                return;
+            }
+
+            if (eventSource) {
+                disconnectStream();
+            }
+
+            updateStatus('Connecting...', 'connecting');
+            addLog('Connecting to log stream for job: ' + jobId, 'status');
+
+            const url = `http://45.55.253.124/api/scraper/logs/${jobId}`;
+            eventSource = new EventSource(url);
+
+            startTime = Date.now();
+            durationInterval = setInterval(updateDuration, 1000);
+
+            eventSource.onopen = function() {
+                updateStatus('Connected', 'connected');
+                addLog('✅ Connected to log stream', 'success');
+            };
+
+            eventSource.onmessage = function(event) {
+                eventCount++;
+                document.getElementById('eventCount').textContent = eventCount;
+
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'log') {
+                        addLog(data.message, 'info');
+                    } else if (data.status === 'connected') {
+                        addLog('🔗 ' + data.message, 'success');
+                    } else if (data.status === 'completed') {
+                        addLog('✅ ' + data.message, 'success');
+                        disconnectStream();
+                    } else if (data.status === 'failed') {
+                        addLog('❌ ' + data.message, 'error');
+                        disconnectStream();
+                    } else if (data.status === 'error') {
+                        addLog('⚠️ ' + data.message, 'error');
+                    }
+                } catch (e) {
+                    addLog('Raw: ' + event.data, 'info');
+                }
+            };
+
+            eventSource.onerror = function(error) {
+                addLog('❌ Connection error', 'error');
+                updateStatus('Error', 'disconnected');
+                disconnectStream();
+            };
+        }
+
+        function disconnectStream() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                updateStatus('Disconnected', 'disconnected');
+                addLog('⏹️ Disconnected from stream', 'warning');
+            }
+            
+            if (durationInterval) {
+                clearInterval(durationInterval);
+                durationInterval = null;
+            }
+        }
+
+        function clearLogs() {
+            document.getElementById('logContainer').innerHTML = '';
+            lineCount = 0;
+            eventCount = 0;
+            document.getElementById('lineCount').textContent = '0';
+            document.getElementById('eventCount').textContent = '0';
+            document.getElementById('duration').textContent = '0s';
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            disconnectStream();
+        });
+    </script>
+</body>
+</html>
+

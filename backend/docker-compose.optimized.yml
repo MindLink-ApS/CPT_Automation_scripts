@@ -1,0 +1,102 @@
+# ============================================================================
+# Docker Compose Configuration - OPTIMIZED
+# ============================================================================
+# This uses the optimized multi-stage Dockerfile for production
+# ============================================================================
+
+version: "3.8"
+
+services:
+  # FastAPI Backend Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.optimized
+    image: cpt-scraper-image:optimized
+    container_name: cpt-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Application settings
+      - APP_NAME=CPT Automation Scripts API
+      - DEBUG=false
+      - BACKEND_PORT=8000
+      - EXECUTION_MODE=docker
+
+      # Supabase (load from .env file)
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+
+      # Docker settings
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DOCKER_IMAGE_NAME=cpt-scraper-image:optimized
+
+      # CORS
+      - CORS_ORIGINS=["*"]
+
+      # Scraper settings
+      - SCRAPERS_BASE_PATH=/app/cpt_automated_scripts
+      - MAX_CONCURRENT_JOBS=3
+      - JOB_TIMEOUT_SECONDS=3600
+
+      # Cron settings
+      - CRON_ENABLED=true
+      - CRON_MONTH=11
+      - CRON_DAY=25
+      - CRON_HOUR=0
+      - CRON_MINUTE=0
+
+    volumes:
+      # Mount Docker socket to allow creating containers
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Mount downloads directory (optional - for persistent downloads)
+      - ./downloads:/app/downloads:rw
+
+      # Mount logs directory
+      - ./logs:/app/logs:rw
+
+    networks:
+      - cpt-network
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 2G
+
+networks:
+  cpt-network:
+    driver: bridge
+# ============================================================================
+# Usage:
+# ============================================================================
+# 1. Build the optimized image:
+#    docker-compose -f docker-compose.optimized.yml build
+#
+# 2. Start the service:
+#    docker-compose -f docker-compose.optimized.yml up -d
+#
+# 3. View logs:
+#    docker-compose -f docker-compose.optimized.yml logs -f backend
+#
+# 4. Stop the service:
+#    docker-compose -f docker-compose.optimized.yml down
+#
+# 5. Rebuild and restart:
+#    docker-compose -f docker-compose.optimized.yml up -d --build
+# ============================================================================
+
