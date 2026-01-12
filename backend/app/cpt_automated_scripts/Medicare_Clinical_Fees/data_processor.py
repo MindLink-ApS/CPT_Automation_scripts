@@ -167,9 +167,18 @@ class DataProcessorCLFS:
                 # Replace 'nan' string with None
                 df_cleaned[col] = df_cleaned[col].replace('nan', None)
 
-        # --- Step 7: Add data_type column ---
+        # --- Step 7: Add data_type column (updated for Milestone 4) ---
         logger.info("➕ Adding 'data_type' column...")
-        df_cleaned['data_type'] = 'Medicare Lab'
+        df_cleaned['data_type'] = 'Medicare Laboratory'
+        
+        # --- Step 7b: Add geozip (USA for national rates) ---
+        df_cleaned['geozip'] = 'USA'
+        
+        # --- Step 7c: Add source ---
+        df_cleaned['source'] = 'Medicare_CLFS_2026'
+        
+        # --- Step 7d: Add specialty default (can be updated by specialty mapping) ---
+        df_cleaned['speciality'] = 'Laboratory'
 
         # --- Step 8: Universal NaN to None conversion for JSON compliance ---
         logger.info(" Converting ALL NaN values to None for JSON compliance...")

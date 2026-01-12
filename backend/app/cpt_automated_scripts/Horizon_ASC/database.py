@@ -17,61 +17,34 @@ from database_utils import (
 logger = logging.getLogger(__name__)
 dotenv.load_dotenv()
 
-class SupabaseHandlerCLFS:
-    """Handle Supabase database operations for the CLFS table"""
+class SupabaseHandlerHorizonASC:
+    """Handle Supabase database operations for Horizon ASC data"""
     
     def __init__(self):
         # Load from environment variables
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_KEY")
         
-        # Table name for CLFS data (updated for Milestone 4 - 2026 data)
+        # Using new_updated_medical_benchmarking_data table
         self.table_name = "new_updated_medical_benchmarking_data"
-        self.source_name = "Medicare_CLFS_2026"
+        self.source_name = "Horizon_ASC"
         
         if not self.supabase_url or not self.supabase_key:
-            logger.error(" Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_KEY in .env file.")
+            logger.error("Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_KEY in .env file.")
             raise ValueError("Missing Supabase credentials in environment variables")
         
         try:
             self.client: Client = create_client(self.supabase_url, self.supabase_key)
-            logger.info(f" Supabase client initialized for table: '{self.table_name}'")
+            logger.info(f"Supabase client initialized for table: '{self.table_name}'")
         except Exception as e:
-            logger.error(f" Failed to initialize Supabase client: {e}")
+            logger.error(f"Failed to initialize Supabase client: {e}")
             raise
-
-    def _validate_data_source(self, records: List[Dict]) -> bool:
-        """
-        Validate that the data structure matches expected Medicare CLFS format.
-        Expected: code (HCPCS), 80th (RATE), code_description, full_description, rel_date
-        """
-        if not records:
-            return False
-        
-        sample_record = records[0]
-        expected_fields = ['code', '80th', 'code_description', 'full_description', 'rel_date']
-        missing_fields = [field for field in expected_fields if field not in sample_record]
-        
-        if missing_fields:
-            logger.warning(f"⚠️ Data validation: Missing expected CLFS fields: {missing_fields}")
-            logger.warning(f"   This might indicate data from wrong source!")
-        
-        # Check for data_type that should be 'Medicare Laboratory' (updated for Milestone 4)
-        if 'data_type' in sample_record and sample_record.get('data_type') != 'Medicare Laboratory':
-            logger.warning(f"⚠️ Data validation: Unexpected data_type '{sample_record.get('data_type')}' for CLFS data")
-        
-        return len(missing_fields) == 0
 
     def _validate_and_prepare_records(self, records: List[Dict]) -> List[Dict]:
         """
         Validate and prepare records for insertion using common utilities.
-        Medicare Clinical Fees (CLFS) does not have geozip data.
         """
         initial_count = len(records)
-        
-        # Validate data structure matches expected source
-        if not self._validate_data_source(records):
-            logger.warning(f"⚠️ Data structure validation warning for {self.source_name}")
         
         # Check if records already exist - if so, use their release_date to prevent duplicates
         existing_release_date = get_existing_release_date(
@@ -84,7 +57,7 @@ class SupabaseHandlerCLFS:
                 record=record,
                 source_name=self.source_name,
                 existing_release_date=existing_release_date,
-                has_geozip=True  # CLFS data has geozip='USA' (updated for Milestone 4)
+                has_geozip=True  # Horizon ASC has geozip (USA)
             )
             if prepared:
                 validated_records.append(prepared)
@@ -101,15 +74,10 @@ class SupabaseHandlerCLFS:
     def insert_records(self, records: List[Dict]) -> dict:
         """
         Insert multiple records into Supabase
-        
-        Args:
-            records: List of dictionaries containing the data to insert
-            
-        Returns:
-            dict: Summary of insertion results
+        Returns: Summary of insertion results
         """
         if not records:
-            logger.warning(" No records to insert.")
+            logger.warning("No records to insert.")
             return {"status": "no_records", "records_inserted": 0, "table": self.table_name}
         
         # Validate and prepare records (add source, filter null codes)
@@ -118,29 +86,21 @@ class SupabaseHandlerCLFS:
         if not validated_records:
             logger.warning("⚠️ No valid records to insert after validation.")
             return {"status": "no_valid_records", "records_inserted": 0, "table": self.table_name}
-        
-        logger.info(f" Preparing to insert {len(validated_records)} records into '{self.table_name}'...")
-        
-        # Log sample record structure for verification
-        if validated_records:
-            logger.info(f" Sample record structure: {list(validated_records[0].keys())}")
-            logger.info(f" Sample record (first): {validated_records[0]}")
-        
+            
         # Remove duplicates within the batch using (source, code, geozip, data_type) as key
-        # Per Milestone 1: unique constraint is (source, code, geozip, data_type)
-        # For CLFS, geozip is 'USA' and data_type is 'Medicare Laboratory'
         seen_keys = {}
         deduplicated_records = []
         duplicates_removed = 0
         
         for record in validated_records:
             # Use (source, code, geozip, data_type) as unique key per Milestone 1
-            geozip = record.get('geozip') or 'USA'  # Default to USA for CLFS
-            data_type = record.get('data_type') or 'Medicare Laboratory'
+            geozip = record.get('geozip') or None
+            data_type = record.get('data_type') or 'ASC Commercial'
             key = (record.get('source'), record.get('code'), geozip, data_type)
             
             if key in seen_keys:
                 duplicates_removed += 1
+                # Replace with newer record (keep last occurrence)
                 index = seen_keys[key]
                 deduplicated_records[index] = record
             else:
@@ -150,7 +110,7 @@ class SupabaseHandlerCLFS:
         if duplicates_removed > 0:
             logger.warning(f"⚠️ Removed {duplicates_removed} duplicate records within batch (same source+code+geozip+data_type)")
         
-        logger.info(f"📤 Upserting {len(deduplicated_records)} records into Supabase...")
+        logger.info(f"📤 Upserting {len(deduplicated_records)} records into '{self.table_name}'...")
         logger.info(f"   (Will update existing records or insert new ones based on source+code+geozip+data_type)")
         logger.info(f"   Processing in chunks of 1000 records to avoid bulk insert failures...")
         
@@ -163,7 +123,4 @@ class SupabaseHandlerCLFS:
             chunk_size=1000
         )
         
-        # Add response_data for backward compatibility
-        result['response_data'] = None
         return result
-    
