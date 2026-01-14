@@ -80,7 +80,8 @@ def get_scraper_type(scraper_name: str) -> Optional[str]:
         "Medicare Lab": "Medicare_Clinical_Fees",
         "Medicare Facility": "Medicare_ASC_Addenda",
         "Novitas OBL": "Novitas",
-        "NJ PIP": "New_Jersey_DOBI"
+        "NJ PIP": "New_Jersey_DOBI",
+        "Horizon ASC": "Horizon_ASC"
     }
     return mapping.get(scraper_name)
 
@@ -128,7 +129,14 @@ def get_all_scrapers() -> list[dict]:
             "type": "New_Jersey_DOBI",
             "description": "New Jersey Personal Injury Protection",
             "icon": "🏛️"
+        },
+        {
+            "name": "Horizon ASC",
+            "type": "Horizon_ASC",
+            "description": "Horizon Ambulatory Surgery Center rates",
+            "icon": "🏥"
         }
+
     ]
 
 
