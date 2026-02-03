@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_KEY: str
     
+    # FairHealth credentials
+    FAIRHEALTH_EMAIL: Optional[str] = None
+    FAIRHEALTH_PASSWORD: Optional[str] = None
+    
+    # Proxy configuration
+    PROXY_SERVER: Optional[str] = None
+    PROXY_USERNAME: Optional[str] = None
+    PROXY_PASSWORD: Optional[str] = None
+    
     # Docker configuration
     DOCKER_HOST: Optional[str] = None  # Default: unix:///var/run/docker.sock
     DOCKER_IMAGE_NAME: str = "cpt-scraper-image"

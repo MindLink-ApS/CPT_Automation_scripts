@@ -2,6 +2,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 import time
 import sys
+import os
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,10 +10,10 @@ logger = logging.getLogger(__name__)
 # ----- CONFIG -----
 NOVITAS_URL = "https://www.novitas-solutions.com/webcenter/portal/MedicareJL/FeeLookup"
 
-# Proxy details (US exit)
-PROXY_SERVER = "http://142.111.48.253:7030"
-PROXY_USERNAME = "eqiwjzzo"
-PROXY_PASSWORD = "c3doqndordj6"
+# Proxy details - loaded from environment variables
+PROXY_SERVER = os.getenv("PROXY_SERVER")
+PROXY_USERNAME = os.getenv("PROXY_USERNAME")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
 # -------------------
 
 def setup_browser(headless=False, proxy_server=None, proxy_user=None, proxy_pass=None):
@@ -294,9 +295,9 @@ class NovitasScraper:
             file_path = download_novitas_fee_schedule(
                 output_dir=str(self.output_dir),
                 headless=headless,
-                proxy_server=PROXY_SERVER,
-                proxy_user=PROXY_USERNAME,
-                proxy_pass=PROXY_PASSWORD,
+                proxy_server=os.getenv("PROXY_SERVER"),
+                proxy_user=os.getenv("PROXY_USERNAME"),
+                proxy_pass=os.getenv("PROXY_PASSWORD"),
             )
             
             logger.info(f"✅ File downloaded successfully: {file_path}")
@@ -312,8 +313,8 @@ if __name__ == "__main__":
     downloaded = download_novitas_fee_schedule(
         output_dir=None,
         headless=False,
-        proxy_server=PROXY_SERVER,
-        proxy_user=PROXY_USERNAME,
-        proxy_pass=PROXY_PASSWORD,
+        proxy_server=os.getenv("PROXY_SERVER"),
+        proxy_user=os.getenv("PROXY_USERNAME"),
+        proxy_pass=os.getenv("PROXY_PASSWORD"),
     )
     print("Done. Saved:", downloaded)

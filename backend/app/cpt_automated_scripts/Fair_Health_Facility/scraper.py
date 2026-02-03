@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Page
 import time
@@ -15,20 +16,40 @@ class FairHealthScraper:
     # ----- CONFIG -----
     FAIRHEALTH_URL = "https://fhonline.fairhealth.org/login"
 
-    # Credentials
-    EMAIL = "david.delvecchio@premier-surgical.com"
-    PASSWORD = "Clifton999!!"
-
-    # Proxy details (US exit)
-    PROXY_SERVER = "http://142.111.48.253:7030"
-    PROXY_USERNAME = "eqiwjzzo"
-    PROXY_PASSWORD = "c3doqndordj6"
-    # -------------------
-
     def __init__(self, download_dir: Path = Path.cwd() / "downloads_fairhealth"):
+        """
+        Initialize FairHealth scraper with credentials from environment variables.
+        
+        Required environment variables:
+        - FAIRHEALTH_EMAIL: FairHealth login email
+        - FAIRHEALTH_PASSWORD: FairHealth login password
+        - PROXY_SERVER: Proxy server URL (optional)
+        - PROXY_USERNAME: Proxy username (optional)
+        - PROXY_PASSWORD: Proxy password (optional)
+        """
         self.download_dir = download_dir
         self.download_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Load credentials from environment variables
+        self.EMAIL = os.getenv("FAIRHEALTH_EMAIL")
+        self.PASSWORD = os.getenv("FAIRHEALTH_PASSWORD")
+        self.PROXY_SERVER = os.getenv("PROXY_SERVER")
+        self.PROXY_USERNAME = os.getenv("PROXY_USERNAME")
+        self.PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
+        
+        # Validate required credentials
+        if not self.EMAIL or not self.PASSWORD:
+            raise ValueError(
+                "Missing required FairHealth credentials. "
+                "Please set FAIRHEALTH_EMAIL and FAIRHEALTH_PASSWORD environment variables."
+            )
+        
         logger.info(f"📁 Download directory set to: {self.download_dir}")
+        if self.PROXY_SERVER:
+            logger.info(f"🔌 Proxy configured: {self.PROXY_SERVER}")
+        else:
+            logger.info("🔌 No proxy configured")
+    # -------------------
 
     def _setup_browser(self, playwright, headless=True):
         """
@@ -48,23 +69,31 @@ class FairHealthScraper:
         browser = playwright.chromium.launch(**launch_args)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
-        page.set_default_timeout(60000)
+        page.set_default_timeout(120000)
         return browser, context, page
 
-    def _safe_goto(self, page, url, timeout=60000, attempts=2):
+    def _safe_goto(self, page, url, timeout=120000, attempts=3):
         """
         Navigate with graceful retry using DOMContentLoaded.
+        Uses exponential backoff for retries.
         """
         last_exc = None
         for i in range(attempts):
             try:
+                logger.info(f"  ↳ Navigation attempt {i+1}/{attempts} to {url}")
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout)
                 time.sleep(2)  # Allow dynamic content to render
+                logger.info(f"  ✅ Navigation successful")
                 return
             except Exception as e:
-                logger.warning(f"⚠️ Navigation attempt {i+1} failed: {e}")
+                logger.warning(f"⚠️ Navigation attempt {i+1}/{attempts} failed: {e}")
                 last_exc = e
-                time.sleep(3)
+                # Exponential backoff: 5s, 10s, 20s
+                wait_time = 5 * (2 ** i)
+                if i < attempts - 1:
+                    logger.info(f"  ↳ Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+        logger.error(f"❌ All {attempts} navigation attempts failed")
         raise last_exc
 
     def _login_to_fairhealth(self, page):
@@ -285,7 +314,14 @@ class FairHealthScraper:
             time.sleep(2)
 
             logger.info("\n📋 STEP 4: Selecting Product...")
-            self._select_react_dropdown(page, "ModuleId", "Allowed ASC Facility", "Product")
+            # Try "Charge ASC Facility" first (new name for 2026), fallback to "Allowed ASC Facility" (old name)
+            try:
+                self._select_react_dropdown(page, "ModuleId", "Charge ASC Facility", "Product")
+                logger.info("✅ Selected 'Charge ASC Facility' (2026 product name)")
+            except Exception as e:
+                logger.warning(f"⚠️ 'Charge ASC Facility' not found, trying 'Allowed ASC Facility': {e}")
+                self._select_react_dropdown(page, "ModuleId", "Allowed ASC Facility", "Product")
+                logger.info("✅ Selected 'Allowed ASC Facility' (legacy product name)")
             time.sleep(2)
 
             logger.info("\n📅 STEP 5: Selecting Release date...")
